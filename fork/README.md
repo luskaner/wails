@@ -34,7 +34,7 @@ The fork keeps the module path of upstream, so it is used with a `replace`:
 ```go
 require github.com/wailsapp/wails/v3 v3.0.0-beta.34
 
-replace github.com/wailsapp/wails/v3 => github.com/luskaner/wails/v3 v3.0.0-beta.34-patched
+replace github.com/wailsapp/wails/v3 => github.com/luskaner/wails/v3 v3.0.0-beta.34-patched.1
 ```
 
 The application keeps importing `github.com/wailsapp/wails/v3/...` unchanged: Go accepts a
@@ -43,7 +43,8 @@ replacement that declares the path it replaces, and the module proxy serves the 
 Renaming the module to `github.com/luskaner/wails/v3` also works, but then the application has
 to import the fork under that path, and Go refuses a module that ends up being used under two
 paths at once, so the imports of the whole tree have to be rewritten. Keeping the upstream path
-is the smaller change.
+is the smaller change, and it keeps the difference between this fork and upstream down to the
+patch itself.
 
 ## Releases
 
