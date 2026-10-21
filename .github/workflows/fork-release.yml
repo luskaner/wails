@@ -1,9 +1,13 @@
 name: fork-release
 
 # Republishes this fork whenever wailsapp/wails cuts a new v3 release: the
-# patch in fork/patches is applied on top of the upstream tag, the module path
-# is rewritten so the fork is consumable on its own, and the result is tagged
-# and released as <upstream tag>-patched.
+# patch in fork/patches is applied on top of the upstream tag, and the result
+# is tagged and released as <upstream tag>-patched.
+#
+# The commit and the tag are signed with GPG, the same way the ageLANServer
+# releases are, so whoever downloads the module can verify where it comes
+# from. The signing key is read from the GPG_PRIVATE_KEY and PASSPHRASE
+# secrets; without them the release is published unsigned.
 
 on:
   schedule:
@@ -30,6 +34,8 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -40,6 +46,13 @@ jobs:
         with:
           go-version: '1.27.1'
           cache-dependency-path: v3/go.sum
+      - name: Import GPG key
+        id: import_gpg
+        if: env.GPG_PRIVATE_KEY != ''
+        uses: crazy-max/ghaction-import-gpg@v7
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE }}
       - name: Configure upstream
         run: |
           git remote add upstream https://github.com/wailsapp/wails.git 2>/dev/null ||
@@ -49,6 +62,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPSTREAM_TAG: ${{ inputs.upstream_tag }}
           PUBLISH: ${{ inputs.publish }}
+          GIT_SIGNING_KEY: ${{ steps.import_gpg.outputs.fingerprint }}
         run: |
           args=()
           if [ -n "$UPSTREAM_TAG" ]; then
@@ -56,5 +70,8 @@ jobs:
           fi
           if [ "$PUBLISH" = "false" ]; then
             args+=(--dry-run)
+          fi
+          if [ -n "$GIT_SIGNING_KEY" ]; then
+            args+=(--require-signature)
           fi
           bash fork/release.sh "${args[@]}"

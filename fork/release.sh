@@ -24,6 +24,7 @@ UPSTREAM_TAG=""
 FORK_TAG_NAME=""
 DRY_RUN=0
 PUBLISH=1
+REQUIRE_SIGNATURE=0
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -41,6 +42,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--no-push)
 		PUBLISH=0
+		shift
+		;;
+	--require-signature)
+		REQUIRE_SIGNATURE=1
 		shift
 		;;
 	*)
@@ -113,6 +118,23 @@ cd "$WORKTREE"
 git config user.name "${GIT_USER_NAME:-luskaner}"
 git config user.email "${GIT_USER_EMAIL:-luskaner@users.noreply.github.com}"
 
+# The commit and the tag are signed, the same way the ageLANServer releases
+# are, so the release can be verified by whoever downloads it.
+SIGNING_KEY="${GIT_SIGNING_KEY:-$(git config --get user.signingkey || true)}"
+if [[ -n "$SIGNING_KEY" ]]; then
+	git config user.signingkey "$SIGNING_KEY"
+	git config commit.gpgsign true
+	git config tag.gpgsign true
+	SIGN_COMMIT=(-S)
+	log "signing with $SIGNING_KEY"
+else
+	SIGN_COMMIT=()
+	if [[ $REQUIRE_SIGNATURE -eq 1 ]]; then
+		fail "no signing key configured and a signed release was required"
+	fi
+	log "no signing key configured, the release will not be signed"
+fi
+
 log "applying $PATCH"
 git apply --3way "$ROOT/$PATCH" || fail "the patch does not apply to ${UPSTREAM_TAG}: update $PATCH"
 
@@ -143,9 +165,13 @@ git add -A
 # The scripts have to stay executable in the tag, whatever the filesystem the
 # release is built on can express.
 git update-index --chmod=+x fork/release.sh
-git commit -m "fix(v3/windows): support 32-bit Windows on ${UPSTREAM_TAG}
+git commit "${SIGN_COMMIT[@]}" -m "fix(v3/windows): support 32-bit Windows on ${UPSTREAM_TAG}
 
 Applies the fork patch to ${UPSTREAM_TAG}." >/dev/null
+
+if [[ ${#SIGN_COMMIT[@]} -gt 0 ]]; then
+	git verify-commit HEAD >/dev/null || fail "the commit signature does not verify"
+fi
 
 if [[ $DRY_RUN -eq 1 ]]; then
 	log "dry run, not tagging nor pushing"
@@ -153,7 +179,12 @@ if [[ $DRY_RUN -eq 1 ]]; then
 	exit 0
 fi
 
-git tag -a "$FORK_TAG" -m "${FORK_TAG}: ${UPSTREAM_TAG} with 32-bit Windows support"
+if [[ ${#SIGN_COMMIT[@]} -gt 0 ]]; then
+	git tag -s -a "$FORK_TAG" -m "${FORK_TAG}: ${UPSTREAM_TAG} with 32-bit Windows support"
+	git verify-tag "$FORK_TAG" >/dev/null || fail "the tag signature does not verify"
+else
+	git tag -a "$FORK_TAG" -m "${FORK_TAG}: ${UPSTREAM_TAG} with 32-bit Windows support"
+fi
 
 log "pushing $FORK_TAG"
 git push origin "refs/tags/$FORK_TAG"
