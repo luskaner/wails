@@ -32,9 +32,9 @@ The patch in [`patches/`](patches) fixes both. It is the patch from
 The fork keeps the module path of upstream, so it is used with a `replace`:
 
 ```go
-require github.com/wailsapp/wails/v3 v3.0.0-beta.34
+require github.com/wailsapp/wails/v3 v3.0.0-beta.30
 
-replace github.com/wailsapp/wails/v3 => github.com/luskaner/wails/v3 v3.0.0-beta.34-patched.1
+replace github.com/wailsapp/wails/v3 => github.com/luskaner/wails/v3 v3.0.0-beta.30-patched.2
 ```
 
 The application keeps importing `github.com/wailsapp/wails/v3/...` unchanged: Go accepts a
