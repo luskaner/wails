@@ -1,0 +1,50 @@
+name: fork-release
+
+# Republishes this fork whenever wailsapp/wails cuts a new v3 release: the
+# patch in fork/patches is applied on top of the upstream tag, the module path
+# is rewritten so the fork is consumable on its own, and the result is tagged
+# and released as <upstream tag>-patched.
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Upstream v3 tag to patch (defaults to the latest one)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: v3/go.sum
+      - name: Configure upstream
+        run: |
+          git remote add upstream https://github.com/wailsapp/wails.git 2>/dev/null ||
+            git remote set-url upstream https://github.com/wailsapp/wails.git
+      - name: Patch and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.upstream_tag }}" ]; then
+            bash fork/release.sh --tag "${{ inputs.upstream_tag }}"
+          else
+            bash fork/release.sh
+          fi
