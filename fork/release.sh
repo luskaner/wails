@@ -136,9 +136,12 @@ if signing_works "$SIGNING_KEY"; then
 	git config commit.gpgsign true
 	git config tag.gpgsign true
 	SIGN_COMMIT=(-S)
+	SIGN_TAG=(-s)
 	log "signing with $SIGNING_KEY"
 else
-	SIGN_COMMIT=()
+	# Whatever the environment has configured, the release is not signed.
+	SIGN_COMMIT=(-c commit.gpgsign=false)
+	SIGN_TAG=(-c tag.gpgsign=false)
 	if [[ $REQUIRE_SIGNATURE -eq 1 ]]; then
 		fail "the signing key ${SIGNING_KEY:-none} is not usable and a signed release was required"
 	fi
@@ -179,7 +182,7 @@ git commit "${SIGN_COMMIT[@]}" -m "fix(v3/windows): support 32-bit Windows on ${
 
 Applies the fork patch to ${UPSTREAM_TAG}." >/dev/null
 
-if [[ ${#SIGN_COMMIT[@]} -gt 0 ]]; then
+if [[ ${#SIGN_COMMIT[@]} -gt 0 && "${SIGN_COMMIT[0]}" == "-S" ]]; then
 	git verify-commit HEAD >/dev/null || fail "the commit signature does not verify"
 fi
 
@@ -189,7 +192,7 @@ if [[ $DRY_RUN -eq 1 ]]; then
 	exit 0
 fi
 
-if [[ ${#SIGN_COMMIT[@]} -gt 0 ]]; then
+if [[ "${SIGN_TAG[0]}" == "-s" ]]; then
 	git tag -s -a "$FORK_TAG" -m "${FORK_TAG}: ${UPSTREAM_TAG} with 32-bit Windows support"
 	git verify-tag "$FORK_TAG" >/dev/null || fail "the tag signature does not verify"
 else
