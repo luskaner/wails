@@ -83,8 +83,9 @@ FORK_TAG="${FORK_TAG_NAME:-${UPSTREAM_TAG}-patched}"
 
 # A release is never republished: the go module proxy and the checksum
 # database keep the first content they saw for a version forever, so a tag
-# that already exists is left alone.
-if git tag --list "${UPSTREAM_TAG}-patched*" | grep -q .; then
+# that already exists is left alone. An explicit tag name means the caller
+# knows what it is doing.
+if [[ -z "$FORK_TAG_NAME" ]] && git tag --list "${UPSTREAM_TAG}-patched*" | grep -q .; then
 	log "${UPSTREAM_TAG} is already released, nothing to do"
 	exit 0
 fi
@@ -114,14 +115,23 @@ git worktree add --detach "$WORKTREE" "$UPSTREAM_TAG" >/dev/null
 
 cd "$WORKTREE"
 
-# The runner has no identity, and the tag needs one.
-git config user.name "${GIT_USER_NAME:-luskaner}"
-git config user.email "${GIT_USER_EMAIL:-luskaner@users.noreply.github.com}"
+# The runner has no identity, and the tag needs one. The email is the one of
+# the signing key, so GitHub can tie the signature to the account.
+git config user.name "${GIT_USER_NAME:-David Fernández Aldana (GitHub)}"
+git config user.email "${GIT_USER_EMAIL:-luskaner@gmail.com}"
 
 # The commit and the tag are signed, the same way the ageLANServer releases
-# are, so the release can be verified by whoever downloads it.
+# are, so the release can be verified by whoever downloads it. Git does the
+# signing, with the gpg program and the keyring it is configured with.
 SIGNING_KEY="${GIT_SIGNING_KEY:-$(git config --get user.signingkey || true)}"
-if [[ -n "$SIGNING_KEY" ]]; then
+signing_works() {
+	[[ -n "$1" ]] || return 1
+	git -c user.signingkey="$1" -c commit.gpgsign=true \
+		commit --allow-empty -q -S -m "probe" >/dev/null 2>&1 || return 1
+	git reset -q --hard HEAD >/dev/null 2>&1
+	return 0
+}
+if signing_works "$SIGNING_KEY"; then
 	git config user.signingkey "$SIGNING_KEY"
 	git config commit.gpgsign true
 	git config tag.gpgsign true
@@ -130,9 +140,9 @@ if [[ -n "$SIGNING_KEY" ]]; then
 else
 	SIGN_COMMIT=()
 	if [[ $REQUIRE_SIGNATURE -eq 1 ]]; then
-		fail "no signing key configured and a signed release was required"
+		fail "the signing key ${SIGNING_KEY:-none} is not usable and a signed release was required"
 	fi
-	log "no signing key configured, the release will not be signed"
+	log "no usable signing key, the release will not be signed"
 fi
 
 log "applying $PATCH"
