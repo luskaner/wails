@@ -135,13 +135,17 @@ if signing_works "$SIGNING_KEY"; then
 	git config user.signingkey "$SIGNING_KEY"
 	git config commit.gpgsign true
 	git config tag.gpgsign true
-	SIGN_COMMIT=(-S)
-	SIGN_TAG=(-s)
+	COMMIT_GIT_OPTS=()
+	COMMIT_SIGN=(-S)
+	TAG_GIT_OPTS=()
+	TAG_SIGN=(-s)
 	log "signing with $SIGNING_KEY"
 else
 	# Whatever the environment has configured, the release is not signed.
-	SIGN_COMMIT=(-c commit.gpgsign=false)
-	SIGN_TAG=(-c tag.gpgsign=false)
+	COMMIT_GIT_OPTS=(-c commit.gpgsign=false)
+	COMMIT_SIGN=()
+	TAG_GIT_OPTS=(-c tag.gpgsign=false)
+	TAG_SIGN=()
 	if [[ $REQUIRE_SIGNATURE -eq 1 ]]; then
 		fail "the signing key ${SIGNING_KEY:-none} is not usable and a signed release was required"
 	fi
@@ -178,11 +182,11 @@ git add -A
 # The scripts have to stay executable in the tag, whatever the filesystem the
 # release is built on can express.
 git update-index --chmod=+x fork/release.sh
-git commit "${SIGN_COMMIT[@]}" -m "fix(v3/windows): support 32-bit Windows on ${UPSTREAM_TAG}
+git "${COMMIT_GIT_OPTS[@]}" commit "${COMMIT_SIGN[@]}" -m "fix(v3/windows): support 32-bit Windows on ${UPSTREAM_TAG}
 
 Applies the fork patch to ${UPSTREAM_TAG}." >/dev/null
 
-if [[ ${#SIGN_COMMIT[@]} -gt 0 && "${SIGN_COMMIT[0]}" == "-S" ]]; then
+if [[ ${#COMMIT_SIGN[@]} -gt 0 ]]; then
 	git verify-commit HEAD >/dev/null || fail "the commit signature does not verify"
 fi
 
@@ -192,11 +196,9 @@ if [[ $DRY_RUN -eq 1 ]]; then
 	exit 0
 fi
 
-if [[ "${SIGN_TAG[0]}" == "-s" ]]; then
-	git tag -s -a "$FORK_TAG" -m "${FORK_TAG}: ${UPSTREAM_TAG} with 32-bit Windows support"
+git "${TAG_GIT_OPTS[@]}" tag "${TAG_SIGN[@]}" -a "$FORK_TAG" -m "${FORK_TAG}: ${UPSTREAM_TAG} with 32-bit Windows support"
+if [[ ${#TAG_SIGN[@]} -gt 0 ]]; then
 	git verify-tag "$FORK_TAG" >/dev/null || fail "the tag signature does not verify"
-else
-	git tag -a "$FORK_TAG" -m "${FORK_TAG}: ${UPSTREAM_TAG} with 32-bit Windows support"
 fi
 
 log "pushing $FORK_TAG"
