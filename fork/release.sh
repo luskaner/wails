@@ -157,9 +157,11 @@ log "applying $PATCH"
 git apply --3way "$ROOT/$PATCH" || fail "the patch does not apply to ${UPSTREAM_TAG}: update $PATCH"
 
 # The fork's own files travel with the release, so the tag is self contained.
-mkdir -p fork .github/workflows
+# (Only the fork/ directory with patches, release.sh, README.md; not workflows
+# because the GitHub token lacks workflows permission and they're not needed in
+# the release tag - the fork-release workflow lives in the fork's default branch.)
+mkdir -p fork
 cp -R "$ROOT/fork/." fork/
-cp "$ROOT/.github/workflows/fork-release.yml" .github/workflows/
 
 # ---------------------------------------------------------------------------
 # The patched tree has to build for every Windows architecture.
