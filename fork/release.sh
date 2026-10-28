@@ -163,6 +163,11 @@ git apply --3way "$ROOT/$PATCH" || fail "the patch does not apply to ${UPSTREAM_
 mkdir -p fork
 cp -R "$ROOT/fork/." fork/
 
+# Remove any upstream workflow files that came with the tag (e.g., nightly tags
+# include .github/workflows/). The GitHub App token lacks 'workflows' permission
+# so we must not include them in the release commit.
+rm -rf .github/workflows
+
 # ---------------------------------------------------------------------------
 # The patched tree has to build for every Windows architecture.
 # ---------------------------------------------------------------------------
