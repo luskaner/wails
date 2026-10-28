@@ -206,7 +206,6 @@ fi
 
 log "pushing $FORK_TAG"
 git push origin "refs/tags/$FORK_TAG"
-git push --force origin "HEAD:refs/heads/$BRANCH"
 
 # The default branch follows the latest upstream release, so a release built
 # for an older tag does not move it backwards.
