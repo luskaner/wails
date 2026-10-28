@@ -75,7 +75,8 @@ if [[ -z "$UPSTREAM_TAG" ]]; then
 	git remote get-url upstream >/dev/null 2>&1 ||
 		git remote add upstream "$UPSTREAM_REMOTE"
 	git fetch --tags --force upstream >/dev/null 2>&1 || true
-	UPSTREAM_TAG="$(git tag --list 'v3.*' --sort=-v:refname | grep -v -- '-patched$' | head -n 1)"
+	# Filter out all patched tags (both -patched and -patched.*)
+	UPSTREAM_TAG="$(git tag --list 'v3.*' --sort=-v:refname | grep -v -- '-patched' | head -n 1)"
 fi
 [[ -n "$UPSTREAM_TAG" ]] || fail "no upstream v3 tag found"
 
@@ -85,7 +86,7 @@ FORK_TAG="${FORK_TAG_NAME:-${UPSTREAM_TAG}-patched}"
 # database keep the first content they saw for a version forever, so a tag
 # that already exists is left alone. An explicit tag name means the caller
 # knows what it is doing.
-if [[ -z "$FORK_TAG_NAME" ]] && git tag --list "${UPSTREAM_TAG}-patched*" | grep -q .; then
+if [[ -z "$FORK_TAG_NAME" ]] && git rev-parse -q --verify "refs/tags/${UPSTREAM_TAG}-patched" >/dev/null; then
 	log "${UPSTREAM_TAG} is already released, nothing to do"
 	exit 0
 fi
