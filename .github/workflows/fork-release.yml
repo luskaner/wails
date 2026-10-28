@@ -26,7 +26,6 @@ on:
 
 permissions:
   contents: write
-  workflows: write
 
 concurrency:
   group: fork-release
