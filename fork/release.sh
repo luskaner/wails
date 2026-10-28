@@ -4,9 +4,9 @@
 # Windows patch, with the module path rewritten so the fork is consumable on
 # its own.
 #
-# The release is tagged <upstream tag>-patched, which sorts after the upstream
-# tag it is based on, so `go get github.com/luskaner/wails/v3@latest` picks
-# the patched build and not the unpatched upstream one.
+# The release REPLACES the upstream tag (same name) with the patched version,
+# so `go get github.com/luskaner/wails/v3@<tag>` gets the fixed build.
+# This "repairs" the upstream release by overwriting the tag in this fork.
 #
 # Usage:
 #   fork/release.sh [--tag <upstream tag>] [--dry-run] [--no-push]
@@ -80,22 +80,19 @@ if [[ -z "$UPSTREAM_TAG" ]]; then
 fi
 [[ -n "$UPSTREAM_TAG" ]] || fail "no upstream v3 tag found"
 
-FORK_TAG="${FORK_TAG_NAME:-${UPSTREAM_TAG}-patched}"
+# The fork tag is the SAME as upstream tag - we replace the upstream tag
+# with the patched version to "repair" the release.
+FORK_TAG="${FORK_TAG_NAME:-$UPSTREAM_TAG}"
 
-# A release is never republished: the go module proxy and the checksum
-# database keep the first content they saw for a version forever, so a tag
-# that already exists is left alone. An explicit tag name means the caller
-# knows what it is doing.
-if [[ -z "$FORK_TAG_NAME" ]] && git rev-parse -q --verify "refs/tags/${UPSTREAM_TAG}-patched" >/dev/null; then
-	log "${UPSTREAM_TAG} is already released, nothing to do"
-	exit 0
-fi
-if git rev-parse -q --verify "refs/tags/$FORK_TAG" >/dev/null; then
-	log "$FORK_TAG already exists, nothing to do"
-	exit 0
+# If the tag already exists on remote, delete it first so we can
+# replace it with the patched version. This is the "repair" step.
+# (We keep the local tag for the worktree checkout, then delete it after.)
+if git ls-remote --exit-code --tags origin "refs/tags/$FORK_TAG" >/dev/null 2>&1; then
+	log "deleting existing remote tag $FORK_TAG"
+	git push origin ":refs/tags/$FORK_TAG" >/dev/null 2>&1 || true
 fi
 
-log "patching upstream ${UPSTREAM_TAG} as ${FORK_TAG}"
+log "patching upstream ${UPSTREAM_TAG} as ${FORK_TAG} (repairing release)"
 
 # ---------------------------------------------------------------------------
 # The upstream tree, the patch and the fork's own files, in a worktree so the
@@ -115,6 +112,13 @@ rm -rf "$WORKTREE"
 git worktree add --detach "$WORKTREE" "$UPSTREAM_TAG" >/dev/null
 
 cd "$WORKTREE"
+
+# Now that the worktree is created, delete the local tag so we can create
+# the new one with the same name.
+if git rev-parse -q --verify "refs/tags/$FORK_TAG" >/dev/null; then
+	log "deleting existing local tag $FORK_TAG"
+	git tag -d "$FORK_TAG" >/dev/null
+fi
 
 # The runner has no identity, and the tag needs one. The email is the one of
 # the signing key, so GitHub can tie the signature to the account.
@@ -204,13 +208,13 @@ if [[ $DRY_RUN -eq 1 ]]; then
 	exit 0
 fi
 
-git "${TAG_GIT_OPTS[@]}" tag "${TAG_SIGN[@]}" -a "$FORK_TAG" -m "${FORK_TAG}: ${UPSTREAM_TAG} with 32-bit Windows support"
+git "${TAG_GIT_OPTS[@]}" tag "${TAG_SIGN[@]}" -a "$FORK_TAG" -m "${FORK_TAG}: ${UPSTREAM_TAG} with 32-bit Windows support (repaired)"
 if [[ ${#TAG_SIGN[@]} -gt 0 ]]; then
 	git verify-tag "$FORK_TAG" >/dev/null || fail "the tag signature does not verify"
 fi
 
-log "pushing $FORK_TAG"
-git push origin "refs/tags/$FORK_TAG"
+log "pushing $FORK_TAG (force)"
+git push --force origin "refs/tags/$FORK_TAG"
 
 # The default branch follows the latest upstream release, so a release built
 # for an older tag does not move it backwards.
@@ -234,7 +238,7 @@ fi
 NOTES="$(mktemp)"
 cat >"$NOTES" <<EOF
 ${UPSTREAM_TAG} of [wailsapp/wails](https://github.com/wailsapp/wails) with the
-32-bit Windows runtime fixes applied.
+32-bit Windows runtime fixes applied (repaired release).
 
 Wails v3 does not run on 32-bit Windows: the \`IDropTarget\` COM callbacks take
 a \`POINT\` by value, which is wider than a \`uintptr\` on GOARCH=386, and
@@ -246,12 +250,13 @@ The patch is the one from [wailsapp/wails#5836](https://github.com/wailsapp/wail
 and is kept in \`fork/patches/\` in this repository, where the release workflow
 reapplies it to every new upstream v3 release.
 
-The module keeps its upstream path, so the fork is used with a \`replace\`:
+This release REPLACES the upstream tag \`${UPSTREAM_TAG}\` in this fork with the
+patched version. Use it with a \`replace\` directive:
 
 \`\`\`go
 require github.com/wailsapp/wails/v3 ${UPSTREAM_TAG}
 
-replace github.com/wailsapp/wails/v3 => github.com/luskaner/wails/v3 ${FORK_TAG}
+replace github.com/wailsapp/wails/v3 => github.com/luskaner/wails/v3 ${UPSTREAM_TAG}
 \`\`\`
 
 Go accepts it because the module declares the path it is replacing, and the
