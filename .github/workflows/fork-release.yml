@@ -2,12 +2,28 @@ name: fork-release
 
 # Republishes this fork whenever wailsapp/wails cuts a new v3 release: the
 # patch in fork/patches is applied on top of the upstream tag, and the result
-# is tagged and released as <upstream tag>-patched.
+# is tagged and released under the same tag name, repairing this fork's copy of
+# the upstream release.
+#
+# With no input the job publishes the latest stable upstream release and the
+# latest pre-release (the newest nightly/beta), and skips versions that are
+# already published. Starting it by hand with an upstream tag releases exactly
+# that tag.
+#
+# A published tag is never moved: the Go module proxy freezes the first content
+# it sees for a version, so re-pushing a tag does not change what `go get`
+# returns. fork/release.sh checks the fork's tags and skips the ones that
+# already carry the patch.
 #
 # The commit and the tag are signed with GPG, the same way the ageLANServer
 # releases are, so whoever downloads the module can verify where it comes
 # from. The signing key is read from the GPG_PRIVATE_KEY and PASSPHRASE
 # secrets; without them the release is published unsigned.
+#
+# The release tree is published only as a tag. It is never pushed to the
+# default branch: it drops .github/workflows (this token is not allowed to
+# push workflow files) and pushing it over master would delete this workflow
+# and stop every scheduled run.
 
 on:
   schedule:
@@ -15,7 +31,7 @@ on:
   workflow_dispatch:
     inputs:
       upstream_tag:
-        description: 'Upstream v3 tag to patch (defaults to the latest one)'
+        description: 'Upstream v3 tag to patch (blank = latest stable + latest pre-release)'
         required: false
         type: string
       publish:
@@ -34,8 +50,10 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GIT_TERMINAL_PROMPT: '0'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,12 +71,6 @@ jobs:
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
-      - name: Configure upstream
-        run: |
-          git remote add upstream https://github.com/wailsapp/wails.git 2>/dev/null ||
-            git remote set-url upstream https://github.com/wailsapp/wails.git
-      - name: Fetch upstream tags
-        run: git fetch --tags --force upstream
       - name: Patch and release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

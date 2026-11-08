@@ -32,9 +32,9 @@ The patch in [`patches/`](patches) fixes both. It is the patch from
 The fork keeps the module path of upstream, so it is used with a `replace`:
 
 ```go
-require github.com/wailsapp/wails/v3 v3.0.0-beta.30
+require github.com/wailsapp/wails/v3 v3.1.0
 
-replace github.com/wailsapp/wails/v3 => github.com/luskaner/wails/v3 v3.0.0-beta.30-patched.2
+replace github.com/wailsapp/wails/v3 => github.com/luskaner/wails/v3 v3.1.0
 ```
 
 The application keeps importing `github.com/wailsapp/wails/v3/...` unchanged: Go accepts a
@@ -48,19 +48,32 @@ patch itself.
 
 ## Releases
 
-Every upstream v3 release is republished here as `<upstream tag>-patched`, for example
-`v3.0.0-beta.34-patched`. The suffix sorts after the upstream tag it is based on, so
-`go get github.com/luskaner/wails/v3@latest` picks the patched build and not the unpatched
-upstream one.
+Every upstream v3 release — stable or pre-release — is republished here with the patch applied.
+The fork keeps the upstream tag *name*: the tag `v3.1.0` in this repository points at the patched
+commit, not at upstream's, so the `replace` above can use the same version the application already
+requires. Upstream tags created after the fork was made are not copied into it automatically; the
+release workflow creates them.
 
-A release is never republished. The go module proxy and the checksum database keep the first
-content they ever saw for a version, so a tag that has been published once is frozen: if the
-patch has to change, the release gets a new name (`--tag-name`).
+A published version is never republished. The Go module proxy and the checksum database freeze the
+first content they see for a version, so the workflow skips upstream tags that already point at a
+patched tree: re-pushing a tag does not change what `go get` returns. If the patch has to change
+for a version that is already published, publish it again under a new name and point the `replace`
+at that name:
 
-The [`fork-release`](../../.github/workflows/fork-release.yml) workflow does it: it runs every
-day, and it can also be started by hand from the Actions tab. It checks out the upstream tag,
-applies the patch, builds the result for windows/386, windows/amd64 and windows/arm64, and
-then tags, pushes and publishes the release.
+```bash
+fork/release.sh --tag v3.1.0 --tag-name v3.1.0-patched.1
+```
+
+The fork inherits upstream's tags, and the older ones that were never repaired point at unpatched
+upstream commits. `fork/release.sh --tag <tag>` repairs one of them on demand: it replaces the tag
+in this repository, although versions the module proxy already served stay unpatched for whoever
+fetched them.
+
+The [`fork-release`](../../.github/workflows/fork-release.yml) workflow does the publishing. It
+runs every day at 04:23 UTC; with no input it releases the latest stable upstream tag and the
+latest pre-release (the newest nightly/beta), skipping anything already released. It can also be
+started by hand from the Actions tab with a specific upstream tag, for real or as a dry run (the
+`publish` input). It never pushes to the default branch: the patched tree lives only in the tag.
 
 ## Keeping the patch up to date
 
@@ -79,16 +92,18 @@ When upstream changes any of them and the patch no longer applies, the workflow 
 new upstream release:
 
 ```bash
-git checkout upstream/v3.0.0-beta.35
-git apply --3way ../fork/patches/0001-v3-windows-32bit-runtime-fixes.patch
+git fetch upstream --tags
+git worktree add ../wails-patch-test v3.1.0
+cd ../wails-patch-test
+git apply --3way ../wails/fork/patches/0001-v3-windows-32bit-runtime-fixes.patch
 ```
 
 If the context moved but the change is still valid, `git apply --3way` merges it. If the
 upstream code changed the same lines, the conflict has to be resolved by hand and the patch
-regenerated:
+regenerated from the worktree:
 
 ```bash
-git diff -- v3/ > fork/patches/0001-v3-windows-32bit-runtime-fixes.patch
+git diff -- v3/ > ../wails/fork/patches/0001-v3-windows-32bit-runtime-fixes.patch
 ```
 
 ## License
