@@ -1,0 +1,170 @@
+diff --git a/v3/internal/webview2/internal/w32/w32.go b/v3/internal/webview2/internal/w32/w32.go
+index c48a2f56a..ba1732211 100644
+--- a/v3/internal/webview2/internal/w32/w32.go
++++ b/v3/internal/webview2/internal/w32/w32.go
+@@ -37,8 +37,6 @@ var (
+ 	User32PostQuitMessage    = user32.NewProc("PostQuitMessage")
+ 	User32SetWindowTextW     = user32.NewProc("SetWindowTextW")
+ 	User32PostThreadMessageW = user32.NewProc("PostThreadMessageW")
+-	User32GetWindowLongPtrW  = user32.NewProc("GetWindowLongPtrW")
+-	User32SetWindowLongPtrW  = user32.NewProc("SetWindowLongPtrW")
+ 	User32AdjustWindowRect   = user32.NewProc("AdjustWindowRect")
+ 	User32SetWindowPos       = user32.NewProc("SetWindowPos")
+ 
+diff --git a/v3/pkg/w32/idroptarget.go b/v3/pkg/w32/idroptarget.go
+index bdc369f43..e71ed5e23 100644
+--- a/v3/pkg/w32/idroptarget.go
++++ b/v3/pkg/w32/idroptarget.go
+@@ -33,28 +33,10 @@ func init() {
+ 	)
+ }
+ 
+-func _iDropTargetDragEnter(
+-	this uintptr,
+-	dataObject *IDataObject,
+-	grfKeyState DWORD,
+-	point POINT,
+-	pdfEffect *DWORD,
+-) uintptr {
+-	return combridge.Resolve[iDropTarget](this).DragEnter(dataObject, grfKeyState, point, pdfEffect)
+-}
+-
+-func _iDropTargetDragOver(this uintptr, grfKeyState DWORD, point POINT, pdfEffect *DWORD) uintptr {
+-	return combridge.Resolve[iDropTarget](this).DragOver(grfKeyState, point, pdfEffect)
+-}
+-
+ func _iDropTargetDragLeave(this uintptr) uintptr {
+ 	return combridge.Resolve[iDropTarget](this).DragLeave()
+ }
+ 
+-func _iDropTargetDrop(this uintptr, dataObject *IDataObject, grfKeyState DWORD, point POINT, pdfEffect *DWORD) uintptr {
+-	return combridge.Resolve[iDropTarget](this).Drop(dataObject, grfKeyState, point, pdfEffect)
+-}
+-
+ type iDropTarget interface {
+ 	combridge.IUnknown
+ 
+diff --git a/v3/pkg/w32/idroptarget_thunks.go b/v3/pkg/w32/idroptarget_thunks.go
+new file mode 100644
+index 000000000..b43fc6413
+--- /dev/null
++++ b/v3/pkg/w32/idroptarget_thunks.go
+@@ -0,0 +1,30 @@
++//go:build windows && !386
++
++package w32
++
++import (
++	"unsafe"
++
++	"github.com/wailsapp/wails/v3/internal/webview2/pkg/combridge"
++)
++
++// Safety net compile-time assertion POINT must be exactly one word wide.
++const _ = uint(unsafe.Sizeof(uintptr(0)) - unsafe.Sizeof(POINT{}))
++
++func _iDropTargetDragEnter(
++	this uintptr,
++	dataObject *IDataObject,
++	grfKeyState DWORD,
++	point POINT,
++	pdfEffect *DWORD,
++) uintptr {
++	return combridge.Resolve[iDropTarget](this).DragEnter(dataObject, grfKeyState, point, pdfEffect)
++}
++
++func _iDropTargetDragOver(this uintptr, grfKeyState DWORD, point POINT, pdfEffect *DWORD) uintptr {
++	return combridge.Resolve[iDropTarget](this).DragOver(grfKeyState, point, pdfEffect)
++}
++
++func _iDropTargetDrop(this uintptr, dataObject *IDataObject, grfKeyState DWORD, point POINT, pdfEffect *DWORD) uintptr {
++	return combridge.Resolve[iDropTarget](this).Drop(dataObject, grfKeyState, point, pdfEffect)
++}
+diff --git a/v3/pkg/w32/idroptarget_thunks_386.go b/v3/pkg/w32/idroptarget_thunks_386.go
+new file mode 100644
+index 000000000..bc749cb85
+--- /dev/null
++++ b/v3/pkg/w32/idroptarget_thunks_386.go
+@@ -0,0 +1,31 @@
++//go:build windows
++
++package w32
++
++import (
++	"github.com/wailsapp/wails/v3/internal/webview2/pkg/combridge"
++)
++
++// 386: stdcall pushes the by-value POINTL argument as two consecutive 4-byte
++// stack slots. syscall.NewCallback rejects any parameter wider than a uintptr.
++
++func _iDropTargetDragEnter(
++	this uintptr,
++	dataObject *IDataObject,
++	grfKeyState DWORD,
++	pointX, pointY int32,
++	pdfEffect *DWORD,
++) uintptr {
++	point := POINT{X: pointX, Y: pointY}
++	return combridge.Resolve[iDropTarget](this).DragEnter(dataObject, grfKeyState, point, pdfEffect)
++}
++
++func _iDropTargetDragOver(this uintptr, grfKeyState DWORD, pointX, pointY int32, pdfEffect *DWORD) uintptr {
++	point := POINT{X: pointX, Y: pointY}
++	return combridge.Resolve[iDropTarget](this).DragOver(grfKeyState, point, pdfEffect)
++}
++
++func _iDropTargetDrop(this uintptr, dataObject *IDataObject, grfKeyState DWORD, pointX, pointY int32, pdfEffect *DWORD) uintptr {
++	point := POINT{X: pointX, Y: pointY}
++	return combridge.Resolve[iDropTarget](this).Drop(dataObject, grfKeyState, point, pdfEffect)
++}
+diff --git a/v3/pkg/w32/user32.go b/v3/pkg/w32/user32.go
+index 98563cc02..89b70fa49 100644
+--- a/v3/pkg/w32/user32.go
++++ b/v3/pkg/w32/user32.go
+@@ -10,6 +10,7 @@ package w32
+ import (
+ 	"fmt"
+ 	"runtime"
++	"strconv"
+ 	"syscall"
+ 	"unsafe"
+ 
+@@ -52,10 +53,6 @@ var (
+ 	procScreenToClient                = moduser32.NewProc("ScreenToClient")
+ 	procCallWindowProc                = moduser32.NewProc("CallWindowProcW")
+ 	procSetWindowLong                 = moduser32.NewProc("SetWindowLongW")
+-	// Wails v3 does not support 32-bit Windows. On 32-bit Windows these Ptr
+-	// APIs are C macros over SetWindowLongW/GetWindowLongW and are not exported
+-	// from user32.dll, so keep the real 64-bit exports here instead of adding a
+-	// 386 fallback.
+ 	procSetWindowLongPtr              = moduser32.NewProc("SetWindowLongPtrW")
+ 	procGetWindowLong                 = moduser32.NewProc("GetWindowLongW")
+ 	procGetWindowLongPtr              = moduser32.NewProc("GetWindowLongPtrW")
+@@ -672,7 +669,12 @@ func SetWindowLong(hwnd HWND, index int, value uint32) uint32 {
+ }
+ 
+ func SetWindowLongPtr(hwnd HWND, index int, value uintptr) uintptr {
+-	ret, _, _ := procSetWindowLongPtr.Call(
++	proc := procSetWindowLongPtr
++	if strconv.IntSize == 32 {
++		proc = procSetWindowLong
++	}
++
++	ret, _, _ := proc.Call(
+ 		uintptr(hwnd),
+ 		uintptr(index),
+ 		value)
+@@ -689,7 +691,12 @@ func GetWindowLong(hwnd HWND, index int) int32 {
+ }
+ 
+ func GetWindowLongPtr(hwnd HWND, index int) uintptr {
+-	ret, _, _ := procGetWindowLongPtr.Call(
++	proc := procGetWindowLongPtr
++	if strconv.IntSize == 32 {
++		proc = procGetWindowLong
++	}
++
++	ret, _, _ := proc.Call(
+ 		uintptr(hwnd),
+ 		uintptr(index))
+ 
